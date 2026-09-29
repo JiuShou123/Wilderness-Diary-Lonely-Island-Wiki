@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八数码问题求解器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        .input-section, .solution-section {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .puzzle {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-template-rows: repeat(3, 80px);
+            gap: 5px;
+            margin: 20px 0;
+        }
+        .tile {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #4CAF50;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 4px;
+            position: relative;
+        }
+        .tile.empty {
+            background-color: #ddd;
+        }
+        .tile input {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: transparent;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .tile.empty input {
+            color: #333;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .solution-steps {
+            margin-top: 20px;
+        }
+        .step {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #e9e9e9;
+            border-radius: 4px;
+        }
+        #solution-status {
+            padding: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>八数码问题求解器</h1>
+    
+    <div class="container">
+        <div class="input-section">
+            <h2>初始状态</h2>
+            <div class="puzzle" id="input-puzzle">
+                <!-- 3x3网格将通过JavaScript动态生成 -->
+            </div>
+            <button id="solve-btn">求解</button>
+        </div>
+        
+        <div class="solution-section">
+            <h2>解决方案</h2>
+            <div id="solution-status">请先设置初始状态并点击"求解"按钮</div>
+            <div class="solution-steps" id="solution-steps"></div>
+        </div>
+    </div>
+
+    <script>
+        // 目标状态
+        const goalState = [
+            [1, 2, 3],
+            [4, 5, 6],
+            [7, 8, 0]
+        ];
+
+        // 初始化输入网格
+        const inputPuzzle = document.getElementById('input-puzzle');
+        const puzzleState = [
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0]
+        ];
+
+        // 创建3x3的输入网格
+        for (let i = 0; i < 3; i++) {
+            for (let j = 0; j < 3; j++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                if (puzzleState[i][j] === 0) {
+                    tile.classList.add('empty');
+                }
+                
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '0';
+                input.max = '8';
+                input.value = puzzleState[i][j];
+                input.dataset.row = i;
+                input.dataset.col = j;
+                input.addEventListener('input', updatePuzzleState);
+                
+                tile.appendChild(input);
+                inputPuzzle.appendChild(tile);
+            }
+        }
+
+        // 更新拼图状态
+        function updatePuzzleState(e) {
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+            let value = parseInt(e.target.value);
+            
+            // 处理无效输入
+            if (isNaN(value)) value = 0;
+            value = Math.max(0, Math.min(8, value));
+            
+            puzzleState[row][col] = value;
+            e.target.value = value;
+            
+            // 更新显示
+            const tile = e.target.parentElement;
+            if (value === 0) {
+                tile.classList.add('empty');
+            } else {
+                tile.classList.remove('empty');
+            }
+        }
+
+        // 将状态转换为字符串用于比较
+        function stateToString(state) {
+            return JSON.stringify(state);
+        }
+
+        // 找到空格(0)的位置
+        function findZero(state) {
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (state[i][j] === 0) {
+                        return [i, j];
+                    }
+                }
+            }
+            return [-1, -1]; // 不应该发生
+        }
+
+        // 生成所有可能的移动
+        function getSuccessors(state) {
+            const successors = [];
+            const [i, j] = findZero(state);
+            const moves = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // 上、下、左、右
+            
+            for (const [di, dj] of moves) {
+                const ni = i + di;
+                const nj = j + dj;
+                
+                if (ni >= 0 && ni < 3 && nj >= 0 && nj < 3) {
+                    // 创建新状态的深拷贝
+                    const newState = JSON.parse(JSON.stringify(state));
+                    // 交换位置
+                    newState[i][j] = newState[ni][nj];
+                    newState[ni][nj] = 0;
+                    // 记录移动的块编号
+                    const blockNumber = newState[i][j];
+                    successors.push({state: newState, blockNumber});
+                }
+            }
+            
+            return successors;
+        }
+
+        // 广度优先搜索
+        function bfs(initialState) {
+            const queue = [{state: initialState, path: []}];
+            const visited = new Set();
+            visited.add(stateToString(initialState));
+            
+            while (queue.length > 0) {
+                const current = queue.shift();
+                
+                // 检查是否达到目标状态
+                if (stateToString(current.state) === stateToString(goalState)) {
+                    return current.path;
+                }
+                
+                // 生成所有可能的下一步
+                const successors = getSuccessors(current.state);
+                for (const successor of successors) {
+                    const stateStr = stateToString(successor.state);
+                    if (!visited.has(stateStr)) {
+                        visited.add(stateStr);
+                        queue.push({
+                            state: successor.state,
+                            path: [...current.path, successor.blockNumber]
+                        });
+                    }
+                }
+            }
+            
+            return null; // 无解
+        }
+
+        // 解决按钮点击事件
+        document.getElementById('solve-btn').addEventListener('click', () => {
+            const solutionStatus = document.getElementById('solution-status');
+            const solutionSteps = document.getElementById('solution-steps');
+            solutionSteps.innerHTML = '';
+            
+            // 验证输入是否有效
+            const numbers = new Set();
+            let zeroCount = 0;
+            
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    const num = puzzleState[i][j];
+                    if (num === 0) {
+                        zeroCount++;
+                    } else if (numbers.has(num)) {
+                        solutionStatus.innerHTML = '<span style="color:red">错误：数字' + num + '重复出现</span>';
+                        return;
+                    } else if (num < 0 || num > 8) {
+                        solutionStatus.innerHTML = '<span style="color:red">错误：数字必须在0-8之间</span>';
+                        return;
+                    }
+                    numbers.add(num);
+                }
+            }
+            
+            if (zeroCount !== 1) {
+                solutionStatus.innerHTML = '<span style="color:red">错误：必须有且只有一个空格(0)</span>';
+                return;
+            }
+            
+            if (numbers.size !== 9) {
+                solutionStatus.innerHTML = '<span style="color:red">错误：必须包含数字0-8各一个</span>';
+                return;
+            }
+            
+            // 开始求解
+            solutionStatus.textContent = "正在求解...";
+            
+            // 使用setTimeout让UI有时间更新
+            setTimeout(() => {
+                const solution = bfs(puzzleState);
+                
+                if (solution) {
+                    solutionStatus.innerHTML = `<span style="color:green">找到解决方案，共需要${solution.length}步：</span>`;
+                    
+                    // 显示每一步
+                    solution.forEach((blockNumber, index) => {
+                        const step = document.createElement('div');
+                        step.className = 'step';
+                        step.textContent = `第${index + 1}步：移动数字 ${blockNumber}`;
+                        solutionSteps.appendChild(step);
+                    });
+                } else {
+                    solutionStatus.innerHTML = '<span style="color:red">未找到解决方案</span>';
+                }
+            }, 100);
+        });
+    </script>
+</body>
+</html>
